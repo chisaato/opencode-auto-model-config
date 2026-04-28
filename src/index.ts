@@ -1,0 +1,1 @@
+export { AutoModelConfigPlugin } from "./plugin"
