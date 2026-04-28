@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@misakacloud/opencode-auto-model-config",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenCode plugin: auto-fill model metadata from models.dev for custom providers",
   "type": "module",
   "main": "./src/index.ts",
