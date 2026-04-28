@@ -28,7 +28,7 @@ src/
 │   ├── parser.ts         # 读 oc-auto-model-config.json（非 opencode.json！）
 │   └── resolver.ts       # 根据映射查 models.dev 数据
 ├── cache/
-│   └── models-dev-cache.ts # 文件缓存：~/.opencode/models-dev.json（TTL 24h，自动下载）
+│   └── models-dev-cache.ts # 文件缓存：~/.config/opencode/models-dev.json（TTL 24h，自动下载）
 ├── debug/
 │   └── config-dumper.ts  # 调试模式：dump 增强后的配置到文件
 ├── utils/
@@ -42,7 +42,7 @@ src/
 - **插件有自己的配置文件，不占用 opencode.json。** 映射写在 `oc-auto-model-config.json`，搜索顺序：`~/.config/opencode/` → 工作目录
 - **Config hook 只做配置增强，不需要其他 hooks**（参考 `@opencode-ai/plugin` 的 `Hooks` 接口）
 - **绝不覆盖用户已填写的字段** — 只填充 `existingModel` 中不存在的 key
-- models.dev API 数据缓存在 `~/.opencode/models-dev.json`，TTL 24h，下载失败时降级使用过期缓存
+- models.dev API 数据缓存在 `~/.config/opencode/models-dev.json`，TTL 24h，下载失败时降级使用过期缓存
 
 ## 用户配置示例
 

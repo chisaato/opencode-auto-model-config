@@ -86,7 +86,7 @@ export const AutoModelConfigPlugin: Plugin = async (input: PluginInput) => {
 1. 搜索并读取 oc-auto-model-config.json
    ├── ~/.config/opencode/oc-auto-model-config.json
    └── ./oc-auto-model-config.json (工作目录)
-2. 读取本地缓存（~/.opencode/models-dev.json）
+2. 读取本地缓存（~/.config/opencode/models-dev.json）
    ├── 不存在或过期 → 下载 api.json → 写入缓存
    └── 有效 → 使用缓存
 3. 遍历 config.provider，找到 mapping 中声明的 provider
@@ -369,7 +369,7 @@ oc-auto-model-config.json:
 
 ```typescript
 class ModelsDevCache {
-  private cachePath: string       // ~/.opencode/models-dev.json
+  private cachePath: string       // ~/.config/opencode/models-dev.json
   private ttl: number             // 毫秒
 
   async get(): Promise<ModelsDevData>     // 获取缓存或下载
@@ -478,6 +478,6 @@ if (dumper && snapshot) {
 
 1. [ ] 确认 mapping 配置格式是否合理
 2. [ ] 确认字段映射规则是否完整（是否需要补充 `temperature`、`interleaved` 等）
-3. [ ] 确认缓存策略（路径 `~/.opencode/models-dev.json`、TTL 24h）
+3. [ ] 确认缓存策略（路径 `~/.config/opencode/models-dev.json`、TTL 24h）
 4. [ ] 确认调试模式 dump 格式是否满足审查需求
 5. [ ] 开始代码实现
