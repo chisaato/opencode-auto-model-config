@@ -27,7 +27,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+      - uses: actions/setup-node@v6
+        with:
+          registry-url: "https://registry.npmjs.org"
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -47,8 +49,6 @@ jobs:
           else
             npm publish --access public
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
         if: always()
