@@ -96,10 +96,10 @@ bun add <npm-package-name>
 {
   "mapping": { ... },
   "cacheTTL": 86400,
-  "cachePath": "~/.opencode/models-dev.json",
+  "cachePath": "~/.config/opencode/models-dev.json",
   "debug": {
     "enabled": false,
-    "dumpPath": "~/.opencode/expanded-config.json",
+    "dumpPath": "~/.config/opencode/expanded-config.json",
     "diffOnly": true
   }
 }

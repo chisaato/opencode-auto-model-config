@@ -71,7 +71,7 @@ export interface ModelsDevCost {
 export interface AutoModelConfig {
   /** 缓存 TTL，单位为秒（默认：86400 = 24 小时） */
   cacheTTL?: number
-  /** 自定义缓存路径，null 表示使用默认路径（~/.opencode/models-dev.json） */
+  /** 自定义缓存路径，null 表示使用默认路径（~/.config/opencode/models-dev.json） */
   cachePath?: string | null
   /** 映射关系：provider -> { modelId -> "modelsdev-provider/modelsdev-modelId" } */
   mapping: Record<string, Record<string, string>>
@@ -85,7 +85,7 @@ export interface AutoModelConfig {
 export interface DebugConfig {
   /** 启用调试输出 */
   enabled: boolean
-  /** 输出文件路径（默认：~/.opencode/expanded-config.json） */
+  /** 输出文件路径（默认：~/.config/opencode/expanded-config.json） */
   dumpPath?: string
   /** 仅输出变更的字段（默认：true） */
   diffOnly?: boolean
