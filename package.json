@@ -25,6 +25,10 @@
     "model-config",
     "metadata"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chisaato/opencode-auto-model-config.git"
+  },
   "author": "",
   "license": "MIT",
   "dependencies": {
