@@ -20,17 +20,17 @@ bunx vitest          # watch 模式
 
 ```
 src/
-├── index.ts              # 入口: export const AutoModelConfigPlugin
+├── index.ts              # 入口：export const AutoModelConfigPlugin
 ├── plugin/
-│   ├── index.ts          # Plugin 工厂: 返回 { config: createConfigHook() }
+│   ├── index.ts          # Plugin 工厂：返回 { config: createConfigHook() }
 │   └── config-hook.ts    # config hook: 读配置 → 读缓存 → 解析映射 → 填充模型
 ├── mapping/
 │   ├── parser.ts         # 读 oc-auto-model-config.json（非 opencode.json！）
 │   └── resolver.ts       # 根据映射查 models.dev 数据
 ├── cache/
-│   └── models-dev-cache.ts # 文件缓存: ~/.opencode/models-dev.json（TTL 24h，自动下载）
+│   └── models-dev-cache.ts # 文件缓存：~/.opencode/models-dev.json（TTL 24h，自动下载）
 ├── debug/
-│   └── config-dumper.ts  # 调试模式: dump 增强后的配置到文件
+│   └── config-dumper.ts  # 调试模式：dump 增强后的配置到文件
 ├── utils/
 │   └── fields-mapper.ts  # models.dev 字段 → OpenCode 配置字段的映射规则
 └── types/
@@ -47,18 +47,26 @@ src/
 ## 用户配置示例
 
 `opencode.json` 只声明 provider 和空 model，不需要放插件配置：
+
 ```jsonc
-{ "plugin": ["opencode-auto-model-config@latest"], "provider": { "misaka-newapi": { "models": { "gpt-5.4": {} } } } }
+{
+	"plugin": ["opencode-auto-model-config@latest"],
+	"provider": { "newapi": { "models": { "gpt-5.4": {} } } },
+}
 ```
 
 `~/.config/opencode/oc-auto-model-config.json` 放映射：
+
 ```jsonc
-{ "mapping": { "misaka-newapi": { "gpt-5.4": "opencode-go/gpt-5.4" } }, "debug": { "enabled": true } }
+{
+	"mapping": { "newapi": { "gpt-5.4": "opencode-go/gpt-5.4" } },
+	"debug": { "enabled": true },
+}
 ```
 
 ## 测试须知
 
-- 测试使用用户本地的真实 models.dev 缓存 `/home/gzzchh/.config/opencode/models-dev.json`（如果存在）
+- 测试使用用户本地的真实 models.dev 缓存 `/home/user/.config/opencode/models-dev.json`（如果存在）
 - `resolver.test.ts` 和 `config-hook.test.ts` 中的真实数据测试会在缓存不可用时自动跳过
 - `parser.test.ts` 测试会 `chdir` 到临时目录创建模拟配置文件，不会影响全局状态
 

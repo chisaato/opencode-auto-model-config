@@ -7,6 +7,7 @@ OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 pro
 当你在 OpenCode 中配置自定义 provider（如 OpenAI 兼容 API、第三方模型服务）时，需要手动填写模型的详细信息（上下文窗口、能力、费用等）。这个插件可以自动从 models.dev 获取这些元数据，并填充到你的 OpenCode 配置中。
 
 主要功能：
+
 - 自动从 models.dev 获取模型元数据
 - 支持自定义 provider 和模型 ID 映射
 - 本地缓存（24 小时），避免频繁请求
@@ -29,7 +30,7 @@ bun add <npm-package-name>
 
 ```json
 {
-  "plugin": ["<npm-package-name>"]
+	"plugin": ["@misakacloud/opencode-auto-model-config"]
 }
 ```
 
@@ -41,11 +42,11 @@ bun add <npm-package-name>
 
 ```json
 {
-  "mapping": {
-    "your-provider-name": {
-      "model-id": "modelsdev-provider/modelsdev-model-id"
-    }
-  }
+	"mapping": {
+		"your-provider-name": {
+			"model-id": "modelsdev-provider/modelsdev-model-id"
+		}
+	}
 }
 ```
 
@@ -55,13 +56,13 @@ bun add <npm-package-name>
 
 ```json
 {
-  "provider": {
-    "my-openai": {
-      "models": {
-        "gpt-4o": {}
-      }
-    }
-  }
+	"provider": {
+		"my-openai": {
+			"models": {
+				"gpt-4o": {}
+			}
+		}
+	}
 }
 ```
 
@@ -69,15 +70,16 @@ bun add <npm-package-name>
 
 ```json
 {
-  "mapping": {
-    "my-openai": {
-      "gpt-4o": "openai/gpt-4o"
-    }
-  }
+	"mapping": {
+		"my-openai": {
+			"gpt-4o": "openai/gpt-4o"
+		}
+	}
 }
 ```
 
 重启 OpenCode 后，`gpt-4o` 模型会自动填充以下字段：
+
 - `name`: 模型显示名称
 - `modalities`: 输入输出模态
 - `limit`: 上下文窗口和输出限制
