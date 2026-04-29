@@ -16,21 +16,15 @@ OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 pro
 
 ## 使用
 
-### 安装
-
-```bash
-npm install <npm-package-name>
-# 或
-bun add <npm-package-name>
-```
-
 ### 在 OpenCode 中启用
+
+> 强烈建议通过版本号锁定,否则 OpenCode 是否会更新插件是薛定谔的.
 
 在 `opencode.json` 中添加插件：
 
 ```json
 {
-	"plugin": ["@misakacloud/opencode-auto-model-config"]
+	"plugin": ["@misakacloud/opencode-auto-model-config@0.3.0"]
 }
 ```
 
@@ -80,6 +74,8 @@ bun add <npm-package-name>
 
 重启 OpenCode 后，`gpt-4o` 模型会自动填充以下字段：
 
+> 此时数据来源 Provider 为 `openai`
+
 - `name`: 模型显示名称
 - `modalities`: 输入输出模态
 - `limit`: 上下文窗口和输出限制
@@ -90,18 +86,46 @@ bun add <npm-package-name>
 - `cost`: 每百万 token 费用
 - `knowledge`: 知识截止日期
 
+同样的,如果你使用的 Provider 采用了 `provider/model` 命名格式，这里也是支持的:
+
+```json
+{
+	"provider": {
+		"my-openai": {
+			"models": {
+				"openai/gpt-4o": {}
+			}
+		}
+	}
+}
+```
+
+你可以在映射的时候使用:
+
+```json
+{
+	"mapping": {
+		"my-openai": {
+			"openai/gpt-4o": "openai/gpt-4o"
+		}
+	}
+}
+```
+
+那么此时还是用 OpenAI 的 `gpt-4o` 模型，数据来源为 `openai`
+
 ### 配置选项
 
 ```json
 {
-  "mapping": { ... },
-  "cacheTTL": 86400,
-  "cachePath": "~/.config/opencode/models-dev.json",
-  "debug": {
-    "enabled": false,
-    "dumpPath": "~/.config/opencode/expanded-config.json",
-    "diffOnly": true
-  }
+	"mapping": {},
+	"cacheTTL": 86400,
+	"cachePath": "~/.config/opencode/models-dev.json",
+	"debug": {
+		"enabled": false,
+		"dumpPath": "~/.config/opencode/expanded-config.json",
+		"diffOnly": true
+	}
 }
 ```
 
