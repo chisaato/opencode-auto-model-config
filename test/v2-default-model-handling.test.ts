@@ -215,4 +215,54 @@ describe("V2 default model vs explicit user overrides", () => {
       ;(Model.Info as any).default = originalDefault
     }
   })
+
+  it("force overrides cost when override.cost is true even if user provided explicit cost", async () => {
+    // 覆盖配置文件以启用 override.cost: true
+    await fs.writeFile(
+      path.join(projectDir, "oc-auto-model-config.json"),
+      JSON.stringify({
+        mapping: {
+          "my-provider": {
+            "explicit-gpt4o": "openai/gpt-4o",
+          },
+        },
+        override: {
+          cost: true,
+        },
+      }),
+    )
+
+    const explicitModel: any = Model.Info.default("my-provider" as any, "explicit-gpt4o" as any)
+    explicitModel.name = "Explicit Handcrafted Name"
+    explicitModel.family = "explicit-family"
+    explicitModel.limit = { context: 12345, output: 678 }
+    explicitModel.cost = [{ input: 999, output: 999, cache: { read: 999, write: 999 } }]
+
+    const fakeModels: Record<string, any> = {
+      "explicit-gpt4o": explicitModel,
+    }
+
+    const { ctx, getTransform } = makeCtx()
+    await AutoModelConfigPlugin.setup(ctx)
+    const transformCallback = getTransform()
+    expect(transformCallback).toBeDefined()
+    transformCallback!(makeEditor(fakeModels))
+
+    // 其它显式配置的字段依然不被覆盖
+    expect(fakeModels["explicit-gpt4o"].name).toBe("Explicit Handcrafted Name")
+    expect(fakeModels["explicit-gpt4o"].family).toBe("explicit-family")
+    expect(fakeModels["explicit-gpt4o"].limit).toEqual({ context: 12345, output: 678 })
+
+    // cost 字段被 models.dev 的 cost 强制覆盖
+    expect(fakeModels["explicit-gpt4o"].cost).toEqual([
+      {
+        input: 2.5,
+        output: 10,
+        cache: {
+          read: 1.25,
+          write: 0,
+        },
+      },
+    ])
+  })
 })

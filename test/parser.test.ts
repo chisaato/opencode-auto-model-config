@@ -63,6 +63,30 @@ describe("loadConfig", () => {
     const result = await loadConfig({ projectDirectory: projectDir, homeDirectory: fakeHome })
     expect(result!.debug).toBeUndefined()
   })
+
+  it("parses override config correctly", async () => {
+    await fs.writeFile(
+      path.join(projectDir, "oc-auto-model-config.json"),
+      JSON.stringify({
+        mapping: { p: { m: "t/m" } },
+        override: { cost: true },
+      }),
+    )
+    const result = await loadConfig({ projectDirectory: projectDir, homeDirectory: fakeHome })
+    expect(result!.override).toEqual({ cost: true })
+  })
+
+  it("parses top-level overrideCost fallback correctly", async () => {
+    await fs.writeFile(
+      path.join(projectDir, "oc-auto-model-config.json"),
+      JSON.stringify({
+        mapping: { p: { m: "t/m" } },
+        overrideCost: true,
+      }),
+    )
+    const result = await loadConfig({ projectDirectory: projectDir, homeDirectory: fakeHome })
+    expect(result!.override).toEqual({ cost: true })
+  })
 })
 
 describe("getMappedProviders", () => {

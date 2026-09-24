@@ -77,6 +77,16 @@ export interface AutoModelConfig {
   mapping: Record<string, Record<string, string>>
   /** 调试模式配置 */
   debug?: DebugConfig
+  /** 覆盖行为配置 */
+  override?: OverrideConfig
+}
+
+/**
+ * 字段强制覆盖配置
+ */
+export interface OverrideConfig {
+  /** 是否强行覆盖模型价格（即使用户或宿主已显式设置 cost） */
+  cost?: boolean
 }
 
 /**

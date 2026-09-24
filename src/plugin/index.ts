@@ -212,10 +212,19 @@ export const AutoModelConfigPlugin = Plugin.define({
           ) as unknown as PlainRecord
 
           // 仅补全未设置或仍为 Model.Info.default 默认初值的叶子，绝不覆盖用户显式值
+          // 特例：当配置了 override.cost === true 且 models.dev 存在 cost 数据时，强制覆盖 cost 字段
+          const forceOverrideCost = pluginConfig.override?.cost === true && v2Fields.cost !== undefined
+
           editor.update(providerName, modelId, (modelToUpdate) => {
             const mutableModel = modelToUpdate as unknown as PlainRecord
             for (const [key, value] of Object.entries(v2Fields)) {
               if (value === undefined) continue
+
+              if (key === "cost" && forceOverrideCost) {
+                mutableModel[key] = value
+                actuallyFilledFields.push(key)
+                continue
+              }
 
               const { shouldFill, value: mergedValue } = mergeModelField(
                 modelDefaults,

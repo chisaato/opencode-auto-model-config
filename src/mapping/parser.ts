@@ -66,7 +66,23 @@ function parseAutoModelConfig(
     cachePath: raw.cachePath ?? undefined,
     mapping: raw.mapping as Record<string, Record<string, string>>,
     debug: parseDebugConfig(raw.debug),
+    override: parseOverrideConfig(raw.override, raw.overrideCost),
   }
+}
+
+function parseOverrideConfig(rawOverride: any, rawOverrideCost: any): AutoModelConfig["override"] {
+  const cost =
+    typeof rawOverride === "object" && rawOverride !== null && typeof rawOverride.cost === "boolean"
+      ? rawOverride.cost
+      : typeof rawOverrideCost === "boolean"
+        ? rawOverrideCost
+        : undefined
+
+  if (cost === undefined) {
+    return undefined
+  }
+
+  return { cost }
 }
 
 function parseDebugConfig(raw: any): AutoModelConfig["debug"] {

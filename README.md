@@ -131,6 +131,9 @@ OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 pro
 		"enabled": false,
 		"dumpPath": "~/.config/opencode/expanded-config.json",
 		"diffOnly": true
+	},
+	"override": {
+		"cost": false
 	}
 }
 ```
@@ -141,3 +144,4 @@ OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 pro
 - `debug.enabled`: 启用调试输出
 - `debug.dumpPath`: 调试输出文件路径
 - `debug.diffOnly`: 仅输出变更的字段（默认 true）
+- `override.cost`: 是否强制覆盖模型价格（默认 false）。开启后，即使用户显式配置了 `cost`，也会使用 models.dev 的价格覆盖，适用于订阅制模型查看准确用量场景
