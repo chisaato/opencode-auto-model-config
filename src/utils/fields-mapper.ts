@@ -1,19 +1,53 @@
 import type { ModelsDevModel } from "../types"
 
+export interface V2ModelEnhancement {
+  name?: string
+  family?: string
+  capabilities?: {
+    tools: boolean
+    input: string[]
+    output: string[]
+  }
+  limit?: {
+    context: number
+    input?: number
+    output: number
+  }
+  cost?: Array<{
+    tier?: {
+      type: "context"
+      size: number
+    }
+    input: number
+    output: number
+    cache: {
+      read: number
+      write: number
+    }
+  }>
+}
+
 /**
- * 将 models.dev 的模型条目映射为 OpenCode 模型配置对象。
- * 仅填充在 OpenCode 配置模式中有意义的字段。
+ * 将 models.dev 的模型条目映射为 OpenCode V2 模型配置对象。
+ * 仅填充在 OpenCode V2 模型模式中有意义的字段：
+ * name, family (若源数据存在), capabilities, limit, cost 数组。
  */
-export function fieldsFromModelsDev(model: ModelsDevModel): Record<string, any> {
-  const result: Record<string, any> = {}
+export function fieldsFromModelsDev(model: ModelsDevModel): V2ModelEnhancement {
+  const result: V2ModelEnhancement = {}
 
   // 名称（始终填充）
   result.name = model.name
 
-  // 模态
-  result.modalities = {
-    input: [...model.modalities.input],
-    output: [...model.modalities.output],
+  // 家族（若存在）
+  if (model.family) {
+    result.family = model.family
+  }
+
+  // 能力 (V2 capabilities 结构)
+  result.capabilities = {
+    tools: Boolean(model.tool_call),
+    input: [...(model.modalities?.input ?? ["text"])],
+    output: [...(model.modalities?.output ?? ["text"])],
   }
 
   // 限制（上下文窗口 + 输出）
@@ -26,45 +60,37 @@ export function fieldsFromModelsDev(model: ModelsDevModel): Record<string, any> 
     result.limit.input = model.limit.input
   }
 
-  // 附件支持
-  result.attachment = model.attachment
-
-  // 能力
-  if (model.tool_call) {
-    result.tool_call = true
-  }
-  if (model.reasoning) {
-    result.reasoning = true
-  }
-  if (model.structured_output) {
-    result.structured_output = true
-  }
-
-  // 费用信息（每百万 token，美元）
+  // 费用信息 (V2 cost 数组)
   if (model.cost) {
-    result.cost = {
+    const costArray: NonNullable<V2ModelEnhancement["cost"]> = []
+
+    // 基础费用
+    costArray.push({
       input: model.cost.input,
       output: model.cost.output,
-    }
-    if (model.cost.cache_read !== undefined) {
-      result.cost.cache_read = model.cost.cache_read
-    }
-    if (model.cost.cache_write !== undefined) {
-      result.cost.cache_write = model.cost.cache_write
-    }
-    if (model.cost.reasoning !== undefined) {
-      result.cost.reasoning = model.cost.reasoning
-    }
-  }
+      cache: {
+        read: model.cost.cache_read ?? 0,
+        write: model.cost.cache_write ?? 0,
+      },
+    })
 
-  // 知识截止日期
-  if (model.knowledge) {
-    result.knowledge = model.knowledge
-  }
+    // context_over_200k 阶梯费用
+    if (model.cost.context_over_200k) {
+      costArray.push({
+        tier: {
+          type: "context",
+          size: 200000,
+        },
+        input: model.cost.context_over_200k.input,
+        output: model.cost.context_over_200k.output,
+        cache: {
+          read: model.cost.context_over_200k.cache_read ?? 0,
+          write: 0,
+        },
+      })
+    }
 
-  // 交错输出（推理模型标记）
-  if (model.interleaved) {
-    result.interleaved = model.interleaved
+    result.cost = costArray
   }
 
   return result
@@ -77,14 +103,9 @@ export function fieldsFromModelsDev(model: ModelsDevModel): Record<string, any> 
 export function getFillableFields(): string[] {
   return [
     "name",
-    "modalities",
+    "family",
+    "capabilities",
     "limit",
-    "attachment",
-    "tool_call",
-    "reasoning",
-    "structured_output",
     "cost",
-    "knowledge",
-    "interleaved",
   ]
 }

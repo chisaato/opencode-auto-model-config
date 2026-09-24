@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { resolveModel, resolveProviderModels } from "../src/mapping/resolver"
 import type { ModelsDevData, AutoModelConfig } from "../src/types"
 
-// 模拟真实 models.dev 结构的最小测试夹具
+// 模拟真实 models.dev 结构的测试夹具
 const testData: ModelsDevData = {
   openai: {
     id: "openai",
@@ -99,17 +99,16 @@ const testData: ModelsDevData = {
         id: "anthropic/claude-3.5-haiku",
         name: "Claude 3.5 Haiku",
         family: "claude",
-        attachment: false,
+        attachment: true,
         reasoning: false,
         tool_call: true,
         temperature: true,
         release_date: "2024-10-22",
         last_updated: "2024-10-22",
-        modalities: { input: ["text"], output: ["text"] },
+        modalities: { input: ["text", "image"], output: ["text"] },
         open_weights: false,
-        cost: { input: 0.8, output: 4, cache_read: 0.08 },
+        cost: { input: 1, output: 5, cache_read: 0.1 },
         limit: { context: 200000, output: 8192 },
-        knowledge: "2024-04",
       },
     },
   },
@@ -119,14 +118,13 @@ const testConfig: AutoModelConfig = {
   mapping: {
     "misaka-newapi": {
       "gpt-5.4": "opencode-go/gpt-5.4",
-      "gpt-5.4-mini": "opencode-go/gpt-5.4-mini",
       "gpt-4o": "openai/gpt-4o",
-      "unknown-model": "openai/does-not-exist",
-      "bad-format": "no-slash",
+      "unknown-model": "nonexistent-provider/nonexistent-model",
+      "bad-format": "no-slash-here",
     },
     "my-openrouter": {
       "gpt-5.4": "openrouter/openai/gpt-5.4",
-      "haiku": "openrouter/anthropic/claude-3.5-haiku",
+      haiku: "openrouter/anthropic/claude-3.5-haiku",
     },
   },
 }
@@ -139,7 +137,7 @@ describe("resolveModel", () => {
     expect(result!.warning).toBeUndefined()
     expect(result!.modelData.name).toBe("GPT-5.4")
     expect(result!.filledFields).toContain("name")
-    expect(result!.filledFields).toContain("modalities")
+    expect(result!.filledFields).toContain("capabilities")
     expect(result!.filledFields).toContain("limit")
   })
 
@@ -164,12 +162,12 @@ describe("resolveModel", () => {
   })
 
   it("returns null for unmapped model", () => {
-    const result = resolveModel(testData, testConfig, "misaka-newapi", "no-mapping")
+    const result = resolveModel(testData, testConfig, "misaka-newapi", "unmapped-model")
     expect(result).toBeNull()
   })
 
   it("returns null for unmapped provider", () => {
-    const result = resolveModel(testData, testConfig, "unknown-provider", "gpt-5.4")
+    const result = resolveModel(testData, testConfig, "unmapped-provider", "gpt-4o")
     expect(result).toBeNull()
   })
 
@@ -180,7 +178,7 @@ describe("resolveModel", () => {
     expect(result!.warning).toBeUndefined()
     expect(result!.modelData.name).toBe("GPT-5.4")
     expect(result!.filledFields).toContain("name")
-    expect(result!.filledFields).toContain("modalities")
+    expect(result!.filledFields).toContain("capabilities")
     expect(result!.filledFields).toContain("limit")
   })
 
@@ -197,7 +195,7 @@ describe("resolveModel", () => {
 describe("resolveProviderModels", () => {
   it("resolves all models for a provider", () => {
     const results = resolveProviderModels(testData, testConfig, "misaka-newapi")
-    expect(results.size).toBe(5) // 3 valid + 2 with warnings
+    expect(results.size).toBe(4) // 2 valid + 2 with warnings
 
     const valid = results.get("gpt-5.4")!
     expect(valid.warning).toBeUndefined()
@@ -231,47 +229,78 @@ describe("resolveProviderModels", () => {
   })
 })
 
-describe("resolveModel with real data", () => {
-  it("matches the user's actual misaka-newapi models against opencode-go", async () => {
-    // Try to load real cached data
-    let realData: ModelsDevData
-    try {
-      const fs = await import("node:fs/promises")
-      const raw = await fs.readFile(
-        "/home/gzzchh/.config/opencode/models-dev.json",
-        "utf-8",
-      )
-      const parsed = JSON.parse(raw)
-      realData = parsed.data || parsed
-    } catch {
-      // Skip if cache not available
-      return
+describe("resolveModel with isolated fixture data", () => {
+  it("resolves multi-model mappings from isolated fixture data", () => {
+    const fixtureData: ModelsDevData = {
+      "opencode-go": {
+        id: "opencode-go",
+        name: "OpenCode Go",
+        npm: "@ai-sdk/openai-compatible",
+        env: [],
+        models: {
+          "gpt-5.4": {
+            id: "gpt-5.4",
+            name: "GPT-5.4",
+            family: "gpt",
+            attachment: true,
+            reasoning: true,
+            tool_call: true,
+            release_date: "2025-08-31",
+            last_updated: "2025-08-31",
+            modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+            open_weights: false,
+            cost: { input: 2.5, output: 15, cache_read: 0.25 },
+            limit: { context: 1050000, input: 922000, output: 128000 },
+          },
+          "mimo-v2-flash": {
+            id: "mimo-v2-flash",
+            name: "Mimo V2 Flash",
+            family: "mimo",
+            attachment: true,
+            reasoning: true,
+            tool_call: true,
+            release_date: "2025-09-01",
+            last_updated: "2025-09-01",
+            modalities: { input: ["text"], output: ["text"] },
+            open_weights: false,
+            limit: { context: 32000, output: 4096 },
+          },
+        },
+      },
     }
 
     const userConfig: AutoModelConfig = {
       mapping: {
         "misaka-newapi": {
           "gpt-5.4": "opencode-go/gpt-5.4",
-          "gpt-5.4-mini": "opencode-go/gpt-5.4-mini",
-          "gpt-5.3-codex-spark": "opencode-go/gpt-5.3-codex-spark",
-          "minimax-m2.7": "opencode-go/minimax-m2.7",
           "mimo-v2-flash": "opencode-go/mimo-v2-flash",
-          "mimo-v2-pro": "opencode-go/mimo-v2-pro",
-          "mimo-v2-omni": "opencode-go/mimo-v2-omni",
         },
       },
     }
 
-    const results = resolveProviderModels(realData, userConfig, "misaka-newapi")
+    const results = resolveProviderModels(fixtureData, userConfig, "misaka-newapi")
+    expect(results.size).toBe(2)
 
-    for (const [modelId, resolved] of results) {
-      if (resolved.warning) {
-        console.warn(`  ✗ ${modelId}: ${resolved.warning}`)
-      } else {
-        expect(resolved.modelData.name).toBeTruthy()
-        expect(resolved.modelData.limit.context).toBeGreaterThan(0)
-        expect(resolved.filledFields.length).toBeGreaterThan(0)
-      }
-    }
+    const gpt = results.get("gpt-5.4")!
+    expect(gpt.warning).toBeUndefined()
+    expect(gpt.modelData.name).toBe("GPT-5.4")
+    expect(gpt.modelData.limit.context).toBe(1050000)
+    expect(gpt.filledFields).toContain("capabilities")
+    expect(gpt.filledFields).toContain("limit")
+
+    const mimo = results.get("mimo-v2-flash")!
+    expect(mimo.warning).toBeUndefined()
+    expect(mimo.modelData.name).toBe("Mimo V2 Flash")
+    expect(mimo.modelData.family).toBe("mimo")
+  })
+
+  it("does not silently pass when models.dev data is empty (no implicit user cache fallback)", () => {
+    // resolver 是纯函数：缺少 models.dev 数据时必须显式返回 warning 且零填充，
+    // 绝不能静默回退到真实用户缓存或产生无断言的通过。
+    const result = resolveModel({}, testConfig, "misaka-newapi", "gpt-5.4")
+    expect(result).not.toBeNull()
+    expect(result!.warning).toContain("not found")
+    expect(result!.filledFields).toHaveLength(0)
+    expect(result!.modelData).toEqual({})
   })
 })

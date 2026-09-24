@@ -2,6 +2,8 @@
 
 OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 provider 自动填充模型元数据。
 
+>  寻找适用于 Pi Coder 的版本? 
+
 ## 介绍
 
 当你在 OpenCode 中配置自定义 provider（如 OpenAI 兼容 API、第三方模型服务）时，需要手动填写模型的详细信息（上下文窗口、能力、费用等）。这个插件可以自动从 models.dev 获取这些元数据，并填充到你的 OpenCode 配置中。
@@ -18,19 +20,27 @@ OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 pro
 
 ### 在 OpenCode 中启用
 
-> 强烈建议通过版本号锁定,否则 OpenCode 是否会更新插件是薛定谔的.
+> 仅支持 OpenCode V2（`@opencode/plugin` 2.x）。
+> 强烈建议通过版本号锁定，否则 OpenCode 是否会更新插件是薛定谔的。
 
-在 `opencode.json` 中添加插件：
+在 `opencode.json` 中配置原生 `plugins` 和 `providers`：
 
 ```json
 {
-	"plugin": ["@misakacloud/opencode-auto-model-config@0.3.0"]
+	"plugins": ["@misakacloud/opencode-auto-model-config@0.3.0"],
+	"providers": {
+		"my-openai": {
+			"models": {
+				"gpt-4o": {}
+			}
+		}
+	}
 }
 ```
 
 ## 配置
 
-插件会自动在 `~/.config/opencode/oc-auto-model-config.json` 创建配置文件。首次运行后，编辑该文件添加模型映射。
+插件支持通过 `oc-auto-model-config.json` 进行配置，优先级为：当前项目根目录 > `~/.config/opencode/`。
 
 ### 配置文件格式
 
@@ -46,11 +56,11 @@ OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 pro
 
 ### 示例
 
-假设你的 OpenCode 配置中有：
+假设你的 OpenCode V2 配置中有：
 
 ```json
 {
-	"provider": {
+	"providers": {
 		"my-openai": {
 			"models": {
 				"gpt-4o": {}
@@ -72,25 +82,21 @@ OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 pro
 }
 ```
 
-重启 OpenCode 后，`gpt-4o` 模型会自动填充以下字段：
+启动 OpenCode 后，`gpt-4o` 模型会自动通过 V2 `ctx.model.transform` 填充以下原生字段：
 
 > 此时数据来源 Provider 为 `openai`
 
 - `name`: 模型显示名称
-- `modalities`: 输入输出模态
-- `limit`: 上下文窗口和输出限制
-- `attachment`: 是否支持附件
-- `tool_call`: 是否支持工具调用
-- `reasoning`: 是否支持推理
-- `structured_output`: 是否支持结构化输出
-- `cost`: 每百万 token 费用
-- `knowledge`: 知识截止日期
+- `family`: 模型家族标识（若源数据包含）
+- `capabilities`: 包含 `tools`（布尔）及输入输出模态 `input`/`output`
+- `limit`: 上下文窗口 `context` 和输出限制 `output`（以及不同的 `input`）
+- `cost`: 原生阶梯费用数组，包含基础费用与 `context_over_200k` 等 tier
 
-同样的,如果你使用的 Provider 采用了 `provider/model` 命名格式，这里也是支持的:
+同样的，如果你使用的 Provider 采用了 `provider/model` 命名格式，这里也是支持的：
 
 ```json
 {
-	"provider": {
+	"providers": {
 		"my-openai": {
 			"models": {
 				"openai/gpt-4o": {}
@@ -100,7 +106,7 @@ OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 pro
 }
 ```
 
-你可以在映射的时候使用:
+你可以在映射的时候使用：
 
 ```json
 {
@@ -112,7 +118,7 @@ OpenCode 插件：根据 [models.dev](https://models.dev) 数据为自定义 pro
 }
 ```
 
-那么此时还是用 OpenAI 的 `gpt-4o` 模型，数据来源为 `openai`
+那么此时还是用 OpenAI 的 `gpt-4o` 模型，数据来源为 `openai`。
 
 ### 配置选项
 

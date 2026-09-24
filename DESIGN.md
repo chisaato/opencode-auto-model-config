@@ -1,171 +1,136 @@
-# opencode-auto-model-config 设计文档
+# opencode-auto-model-config 设计文档（OpenCode V2）
+
+> 本文档描述当前实现所采用的 **OpenCode V2 插件契约**。
+> 历史 V1 设计（`@opencode-ai/plugin`、`config` hook、`plugin`/`provider` 单数配置键）已废弃，
+> 不再作为本项目的实现依据。
 
 ## 1. 动机
 
-用户在 OpenCode 中配置自定义 provider（如 NewAPI 转发站、自建网关等）时，需要手动为每个模型填写 name、limit、modalities、cost 等元数据。这些数据在 [models.dev](https://models.dev) 中已经完整收录。
+用户在 OpenCode 中配置自定义 provider（如 NewAPI 转发站、自建网关、OpenAI 兼容服务等）时，需要手动为每个模型填写 `name`、`limit`、`capabilities`、`cost` 等元数据。这些数据在 [models.dev](https://models.dev) 中已经完整收录。
 
-本插件让用户只需在配置中声明模型 ID 到 models.dev 条目的映射，即可自动填充所有元数据。
+本插件让用户只需在配置中声明模型 ID 到 models.dev 条目的映射，即可自动填充模型元数据。
 
 ## 2. 数据来源
 
-- **API**: `https://models.dev/api.json`（~1.8MB，116 个 provider，4357 个模型，每百万 token 美元定价）
+- **API**: `https://models.dev/api.json`（按 provider ID 索引，每百万 token 美元定价）
 - **缓存**: 首次下载后写入本地文件缓存，默认 TTL 24 小时
-- **现有缓存**: 用户 `/home/gzzchh/.config/opencode/models-dev.json` 已有 116 provider 的完整数据
+- **缓存位置**: 遵循 XDG，默认 `<配置目录>/models-dev.json`
+  - 优先 `XDG_CONFIG_HOME/opencode/models-dev.json`
+  - 回退 `~/.config/opencode/models-dev.json`
+  - 可通过 `cacheTTL` / `cachePath` 覆盖
+- 下载失败时降级使用过期缓存；无任何缓存且下载失败则跳过本次增强
 
-### 2.1 models.dev 数据结构
-
-```
-api.json (dict, keyed by provider ID)
-├── openai (provider)
-│   ├── id: "openai"
-│   ├── npm: "@ai-sdk/openai"
-│   ├── name: "OpenAI"
-│   ├── env: ["OPENAI_API_KEY"]
-│   ├── api: null
-│   ├── doc: "https://..."
-│   └── models (dict, keyed by model ID)
-│       ├── gpt-4o
-│       │   ├── name: "GPT-4o"
-│       │   ├── cost: { input: 2.5, output: 10, cache_read: 1.25 }
-│       │   ├── limit: { context: 128000, output: 16384 }
-│       │   ├── modalities: { input: ["text","image"], output: ["text"] }
-│       │   ├── tool_call: true
-│       │   ├── reasoning: false
-│       │   ├── structured_output: true
-│       │   ├── knowledge: "2023-10"
-│       │   └── ...
-│       └── ...
-├── opencode-go (provider)
-│   ├── id: "opencode-go"
-│   ├── npm: "@ai-sdk/openai-compatible"
-│   ├── api: "https://api.opencode.ai"
-│   └── models
-│       ├── gpt-5.4      ← 同名模型，元数据可能与 openai/gpt-5.4 不同
-│       ├── minimax-m2.7
-│       └── ...
-└── ...
-```
-
-### 2.2 Model 条目字段覆盖度
-
-| 字段 | 覆盖率 | 类型 | 说明 |
-|------|--------|------|------|
-| `id` | 100% | string | 模型 ID |
-| `name` | 100% | string | 显示名称 |
-| `cost.input` | 95% | number | 每百万输入 token 成本 |
-| `cost.output` | 95% | number | 每百万输出 token 成本 |
-| `cost.cache_read` | — | number | 缓存读取成本 |
-| `limit.context` | 100% | number | 上下文窗口 |
-| `limit.output` | 100% | number | 最大输出 |
-| `modalities` | 100% | object | 输入/输出模态 |
-| `tool_call` | 100% | boolean | function calling 支持 |
-| `reasoning` | 100% | boolean | 思维链支持 |
-| `structured_output` | 41.6% | boolean | 结构化输出 |
-| `knowledge` | 49.7% | string | 知识截止日期 |
-| `attachment` | 100% | boolean | 附件支持 |
-| `interleaved` | 8.6% | boolean/object | 交错推理 |
-
-## 3. 插件架构
+## 3. 插件架构（V2）
 
 ### 3.1 插件入口
 
+OpenCode V2 通过 `@opencode/plugin` 2.x 的 `Plugin.define` 加载插件：
+
 ```typescript
 // src/index.ts
-import type { Plugin, PluginInput } from "@opencode-ai/plugin"
+import { AutoModelConfigPlugin } from "./plugin"
 
-export const AutoModelConfigPlugin: Plugin = async (input: PluginInput) => {
-  return {
-    config: createConfigHook(input.client),
-  }
-}
+export { AutoModelConfigPlugin }
+export default AutoModelConfigPlugin
+
+// src/plugin/index.ts
+import { Plugin } from "@opencode/plugin"
+
+export const AutoModelConfigPlugin = Plugin.define({
+  id: "opencode-auto-model-config",
+  async setup(ctx) {
+    // 异步读取映射与 models.dev 缓存，并注册同步 transform
+    await ctx.model.transform((editor) => {
+      // 同步增强 editor 中已存在的模型元数据
+    })
+  },
+})
 ```
 
-### 3.2 Config Hook 工作流
+要点：
+
+- 插件对象是 `{ id, setup }`，`id` 固定为 `opencode-auto-model-config`
+- `setup(ctx)` 为**异步**：在插件启动阶段完成文件 I/O（读取 `oc-auto-model-config.json`、`models-dev.json`）与映射解析
+- `ctx.model.transform(editor => ...)` 注册的回调是**同步**的：只在内存 editor 上补全字段，不做任何 I/O
+- 绝不在 setup 之外持有异步状态；transform 回调依赖 setup 阶段解析好的数据
+
+### 3.2 工作流
 
 ```
-1. 搜索并读取 oc-auto-model-config.json
-   ├── ~/.config/opencode/oc-auto-model-config.json
-   └── ./oc-auto-model-config.json (工作目录)
-2. 读取本地缓存（~/.config/opencode/models-dev.json）
-   ├── 不存在或过期 → 下载 api.json → 写入缓存
-   └── 有效 → 使用缓存
-3. 遍历 config.provider，找到 mapping 中声明的 provider
-4. 对每个映射：user-model-id → "modelsdev-provider/modelsdev-model-id"
-   a. 解析 target: { provider, modelId }
-   b. 在缓存中查找 models[provider].models[modelId]
-   c. 构建 OpenCode 模型配置字段
-   d. 合并到 config.provider[userProvider].models[userModelId]
-5. 返回增强后的 config
+setup(ctx):
+  1. 读取 oc-auto-model-config.json
+     ├── ctx.location.directory/oc-auto-model-config.json（项目优先）
+     └── XDG 全局配置目录/oc-auto-model-config.json（回退）
+  2. 读取 models-dev.json（TTL 24h；缺失/过期则下载，失败降级过期缓存）
+  3. 按 mapping 解析每个 provider 的目标模型元数据
+  4. ctx.model.transform(editor => ...) 注册同步增强回调
+
+transform(editor):
+  对每个已解析的 provider/model：
+    ├── editor.provider.get(providerID) 不存在 → 跳过
+    ├── editor.get(providerID, modelID) 不存在 → 标记 skipped
+    └── editor.update(providerID, modelID, m => ...)
+          仅补全仍等于 Model.Info.default 初始值的字段
+          保留用户显式覆盖值
 ```
 
 ### 3.3 模块划分
 
 ```
 src/
-├── index.ts                  # 插件入口
+├── index.ts                  # 入口：默认导出 AutoModelConfigPlugin
 ├── plugin/
-│   ├── index.ts              # 创建 hooks
-│   └── config-hook.ts        # config hook：核心逻辑
-├── cache/
-│   └── models-dev-cache.ts   # 文件缓存管理（下载、TTL、失效）
+│   └── index.ts              # Plugin.define({ id, setup }) 与 transform 逻辑
 ├── mapping/
-│   ├── parser.ts             # 解析 mapping 配置
-│   └── resolver.ts           # 根据映射解析 models.dev→OpenCode 字段
+│   ├── parser.ts             # 读取 oc-auto-model-config.json（项目优先，XDG 回退）
+│   └── resolver.ts           # 根据映射查 models.dev 数据，产出 ResolvedModel
+├── cache/
+│   └── models-dev-cache.ts   # models-dev.json 文件缓存（下载、TTL、失效降级）
 ├── debug/
-│   └── config-dumper.ts      # 调试模式：dump 增强后配置供审查
-└── utils/
-    └── fields-mapper.ts      # models.dev 字段 → OpenCode 配置字段的映射
+│   └── config-dumper.ts      # 调试模式：dump 增强后的模型元数据差异/结果
+├── utils/
+│   ├── fields-mapper.ts      # models.dev 字段 → OpenCode V2 原生模型字段
+│   └── paths.ts              # 统一路径解析（XDG_CONFIG_HOME / HOME 隔离）
+└── types/
+    └── index.ts              # 共享类型
 ```
 
-## 4. 配置格式设计
+## 4. 配置格式
 
-### 4.1 用户配置
+### 4.1 opencode.json（V2 原生）
 
-插件不修改 opencode.json。所有映射关系写在独立配置文件 `oc-auto-model-config.json` 中，放在 `~/.config/opencode/` 或项目根目录。
-
-#### opencode.json（仅声明 provider + 模型 ID）
+插件不修改 `opencode.json`。用户只需声明 provider 与模型 ID：
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-auto-model-config@latest"],
-  "provider": {
-    "misaka-newapi": {
+  "plugins": ["@misakacloud/opencode-auto-model-config@0.3.0"],
+  "providers": {
+    "my-openai": {
+      "name": "My OpenAI",
       "npm": "@ai-sdk/openai-compatible",
-      "name": "MisakaAPI",
-      "options": {
-        "baseURL": "https://oi.misakacloud.dev/v1"
-      },
+      "options": { "baseURL": "https://example.com/v1" },
       "models": {
-        "gpt-5.4": {},           // 只需空对象，插件自动填充
-        "gpt-5.4-mini": {},
-        "gpt-5.3-codex-spark": {},
-        "minimax-m2.7": {},
-        "mimo-v2-flash": {},
-        "mimo-v2-pro": {},
-        "mimo-v2-omni": {}
+        "gpt-4o": {},
+        "gpt-4o-mini": {}
       }
     }
   }
 }
 ```
 
-#### oc-auto-model-config.json（插件独立配置文件）
-#### oc-auto-model-config.json（插件独立配置文件）
+### 4.2 oc-auto-model-config.json（插件独立配置）
+
+映射写在独立文件中，搜索顺序：当前项目根目录（`ctx.location.directory`）→ XDG / 全局配置目录。
 
 ```jsonc
 {
   "cacheTTL": 86400,
   "cachePath": null,
   "mapping": {
-    "misaka-newapi": {
-      "gpt-5.4":           "opencode-go/gpt-5.4",
-      "gpt-5.4-mini":      "opencode-go/gpt-5.4-mini",
-      "gpt-5.3-codex-spark": "opencode-go/gpt-5.3-codex-spark",
-      "minimax-m2.7":      "opencode-go/minimax-m2.7",
-      "mimo-v2-flash":     "opencode-go/mimo-v2-flash",
-      "mimo-v2-pro":       "opencode-go/mimo-v2-pro",
-      "mimo-v2-omni":      "opencode-go/mimo-v2-omni"
+    "my-openai": {
+      "gpt-4o": "openai/gpt-4o",
+      "gpt-4o-mini": "openai/gpt-4o-mini"
     }
   },
   "debug": {
@@ -176,103 +141,93 @@ src/
 }
 ```
 
-
-### 4.2 映射格式
+### 4.3 映射格式
 
 ```
-oc-auto-model-config.json:
-{
-  "mapping": {
-    "<用户provider名>": {
-      "<用户model ID>": "<models.dev中provider>/<models.dev中model ID>"
-    }
-  }
+"<用户 provider 名>": {
+  "<用户 model ID>": "<models.dev provider>/<models.dev model ID>"
 }
 ```
 
-示例：
-- `"gpt-5.4": "opencode-go/gpt-5.4"` → 从 `models.dev[opencode-go].models[gpt-5.4]` 获取元数据
-- `"minimax-m2.7": "minimax/MiniMax-M2.7"` → 从 `models.dev[minimax].models[MiniMax-M2.7]` 获取
+- `"gpt-4o": "openai/gpt-4o"` → 从 `models.dev[openai].models[gpt-4o]` 取元数据
+- 支持模型 ID 内再含 `/`（如 `"openai/gpt-4o": "openrouter/openai/gpt-4o"`）
+- 先精确匹配，再大小写不敏感匹配（同时检查字典 key 与条目的 `id` 字段）
+- 目标为 `provider/model` 形式；缺 `/`、provider 不存在、model 不存在都会产出 warning
 
-> **注意**: models.dev 中 model ID 的 key 可能与 `id` 字段不同（大小写敏感），匹配时需同时检查 `id` 字段和字典 key。
+## 5. 字段映射（models.dev → V2 原生模型字段）
 
-### 4.3 字段映射规则
+| models.dev | → | OpenCode V2 模型字段 | 说明 |
+|------------|---|----------------------|------|
+| `name` | → | `name` | 模型显示名 |
+| `family` | → | `family` | 仅当源数据存在时填充 |
+| `tool_call` + `modalities` | → | `capabilities` | `{ tools, input[], output[] }` |
+| `limit.context` / `limit.output` / `limit.input` | → | `limit` | `input` 仅在存在且与 context 不同时填充 |
+| `cost`（含 `context_over_200k`） | → | `cost` | V2 原生数组：基础项 + `tier: { type: "context", size: 200000 }` |
 
-| models.dev 字段 | → | OpenCode 配置字段 | 条件 |
-|------------------|---|-------------------|------|
-| `name` | → | `name` | 用户未设置时填充 |
-| `limit.context` | → | `limit.context` | 用户未设置时填充 |
-| `limit.output` | → | `limit.output` | 用户未设置时填充 |
-| `limit.input` | → | `limit.input` | 存在时填充 |
-| `modalities` | → | `modalities` | 用户未设置时填充 |
-| `cost` | → | `cost` | 用户未设置时填充 |
-| `attachment` | → | `attachment` | 用户未设置时填充 |
-| `tool_call` | → | `tool_call` | 存在时填充 |
-| `reasoning` | → | `reasoning` | 存在时填充 |
-| `structured_output` | → | `structured_output` | 存在时填充 |
-| `knowledge` | → | `knowledge` | 存在时填充 |
-| `interleaved` | → | `interleaved` | 推理模型时填充 |
+不再产生 V1 专有的扁平字段（`attachment`、`modalities`、`tool_call`、`reasoning`、`knowledge`、`structured_output` 等）。
 
-### 4.4 覆盖策略
+## 6. 覆盖策略（关键）
 
-- **绝不覆盖**用户已显式设置的字段
-- 只填充用户模型中值为 `undefined` 或不存在（即 `{}`）的字段
+- **绝不覆盖用户显式配置的字段**
+- OpenCode V2 会用 `Model.Info.default(providerID, modelID)` 为模型预填初始默认值
+  （例如 `name = modelID`、`limit = { context: 200000, output: 32000 }`、`capabilities = Capabilities.default()`、`cost = []`）
+- 插件在 transform 时动态获取实际的 `Model.Info.default(providerID, modelID)`，并用深度比较判断字段是否仍为初始默认值：
+  - 仍是 `undefined` 或等于实际默认值 → 视为未显式配置，可自动填充
+  - 与默认值不同 → 视为用户显式覆盖，跳过
+- 若用户显式设置的值恰好等于默认值（例如把 `name` 写成与 modelID 相同），则无法与默认值区分，会被视为可自动填充——这是可接受的折衷
 - 用户的 `options`、`variants` 等字段完全保留
 
-### 4.5 调试模式
+### 6.1 对象字段的按叶子合并
 
-调试模式下，插件会将增强后的配置 dump 到文件，方便用户审查映射是否匹配正确。
+`limit`、`capabilities` 等对象型默认字段按**叶子**比较合并：只填充仍等于默认值或 `undefined` 的叶子，绝不覆盖用户显式设置的叶子。这样当宿主把用户的部分覆盖（例如只写了 `limit.output`）合并到默认对象上时，`limit.context` 等其它默认叶子仍会被补齐。`cost` 等数组型字段保持**整对象**语义，只在当前数组仍等于默认值时整体替换，避免破坏用户自建数组。
 
-#### 配置
+### 6.2 宿主契约假设（当前无法端到端验证）
 
-在 `oc-auto-model-config.json` 中设置 `debug` 字段：
+填充决策依赖一个**尚无法在本仓库端到端验证**的宿主假设：
+
+> 宿主对用户未显式配置的字段所暴露的当前值，应等于 `Model.Info.default(providerID, modelID)` 的返回值。
+
+如果宿主持有别的基底并据此预填字段（即当前值与 `Model.Info.default()` 不一致），可能出现字段**静默不填充**——因为插件会把这些字段误判为用户显式覆盖。需要通过 debug dump 观察实际暴露的字段值来确认。
+
+`test/v2-adapter-integration.test.ts` 等测试使用内存 mock `ModelEditor` 驱动 transform，只验证插件自身的适配逻辑，**不代表已端到端验证宿主行为**。真实 CLI smoke（`test/smoke/opencode-cli.smoke.ts`）默认门控关闭，迄今未在可用环境中通过。
+
+## 7. 调试模式
+
+### 7.1 配置
 
 ```jsonc
 {
   "mapping": { ... },
-  "debug": {
-    "enabled": true,
-    "dumpPath": "./opencode-expanded.json",
-    "diffOnly": true
-  }
+  "debug": { "enabled": true, "dumpPath": "./opencode-expanded.json", "diffOnly": true }
 }
 ```
 
-#### dump 输出格式
+### 7.2 dump 输出
 
-当 `diffOnly: true` 时，输出只包含被插件变更的部分 + 变更元数据：
+`diffOnly: true` 时仅输出被自动填充的字段 + 元数据；`diffOnly: false` 时输出完整模型字段。
 
 ```jsonc
 {
   "_meta": {
-    "plugin": "opencode-auto-model-config",
+    "plugin": "@misakacloud/opencode-auto-model-config",
     "timestamp": "2026-04-29T01:20:00Z",
-    "modelsDevCacheAge": 3600,                    // 缓存已有多久（秒）
+    "modelsDevCacheAge": 3600,
     "summary": {
       "providersProcessed": 1,
-      "modelsFilled": 7,
+      "modelsFilled": 2,
       "modelsNotFound": 0,
-      "mappingsUsed": {
-        "misaka-newapi/gpt-5.4": "opencode-go/gpt-5.4",
-        "misaka-newapi/minimax-m2.7": "opencode-go/minimax-m2.7",
-        // ...
-      }
+      "modelsSkipped": 0,
+      "mappingsUsed": { "my-openai/gpt-4o": "openai/gpt-4o" }
     }
   },
   "provider": {
-    "misaka-newapi": {
+    "my-openai": {
       "models": {
-        "gpt-5.4": {
-          "_source": "opencode-go/gpt-5.4",       // ← 数据来源
-          "_filled": ["name","limit","modalities","cost","attachment","tool_call","reasoning","knowledge"],
-          "name": "GPT-5.4",
-          "limit": { "context": 1050000, ... },
-          // ... 仅显示被填充的字段
-        },
-        "gpt-5.4-mini": {
-          "_source": "opencode-go/gpt-5.4-mini",
-          "_filled": ["name","limit","modalities","cost","attachment","tool_call","reasoning","knowledge"],
-          // ...
+        "gpt-4o": {
+          "_source": "openai/gpt-4o",
+          "_filled": ["name", "capabilities", "limit", "cost"],
+          "name": "GPT-4o",
+          "limit": { "context": 128000, "output": 16384 }
         }
       }
     }
@@ -280,204 +235,31 @@ oc-auto-model-config.json:
 }
 ```
 
-当 `diffOnly: false` 时，输出完整的最终配置（等价于 OpenCode 实际使用的配置）。
-
-#### 工作流
-
-```
-插件处理 config 前:
-  → 深拷贝原始 config 作为 baseline
-
-插件处理 config 后:
-  → 对比 baseline vs 当前 config，计算 diff
-  → 写入 dump 文件
-  → console.log 提示 dump 位置（仅 debug 模式）
-```
-
-## 5. 用户实际场景分析
-
-以用户现有的 `misaka-newapi` 为例：
-
-### 5.1 当前状态（手动填写）
-
-```jsonc
-"misaka-newapi": {
-  "models": {
-    "gpt-5.4": {
-      "name": "GPT-5.4",
-      "attachment": true,
-      "limit": { "context": 1050000, "output": 128000 },
-      "modalities": { "input": ["text","image"], "output": ["text"] },
-      "options": { "reasoningEffort": "none" },
-      "variants": { "none": {...}, "low": {...}, ... }
-    },
-    // ... 每个模型都要手动写 20+ 行
-  }
-}
-```
-
-### 5.2 使用插件后
-
-```jsonc
-"misaka-newapi": {
-  "models": {
-    "gpt-5.4": {},           // ← 只需这 1 行！
-    "gpt-5.4-mini": {},       // ← 自动填充所有元数据
-    "gpt-5.3-codex-spark": {},
-    "minimax-m2.7": {},
-    "mimo-v2-flash": {},
-    "mimo-v2-pro": {},
-    "mimo-v2-omni": {}
-  }
-}
-```
-
-插件处理后，`gpt-5.4` 的模型配置将自动变为：
-
-```jsonc
-"gpt-5.4": {
-  "name": "GPT-5.4",                                          // 来自 opencode-go
-  "attachment": true,
-  "limit": { "context": 1050000, "input": 922000, "output": 128000 },
-  "modalities": { "input": ["text","image","pdf"], "output": ["text"] },
-  "cost": { "input": 2.5, "output": 15, "cache_read": 0.25 },
-  "reasoning": true,
-  "tool_call": true,
-  "knowledge": "2025-08-31"
-  // options / variants 如果用户需要则手动保留
-}
-```
-
-## 6. 技术细节
-
-### 6.1 依赖
+## 8. 依赖
 
 ```json
 {
   "dependencies": {
-    "@opencode-ai/plugin": "^1.4.0"
+    "@opencode/plugin": "2.0.16"
   }
 }
 ```
 
-- 参考 `opencode-lmstudio` 的 `@opencode-ai/plugin: ^1.0.166`
-- 用户环境实际版本是 `1.4.6`，建议最低 `^1.0.0`
+- 唯一运行时依赖即 OpenCode V2 插件 API
+- 不再依赖 V1 的 `@opencode-ai/plugin`
+- ESM only；OpenCode 直接加载 `src/index.ts`，无构建步骤
 
-### 6.2 缓存机制
-
-参考 `opencode-lmstudio` 的 `ModelStatusCache` 但改为文件持久化：
-
-```typescript
-class ModelsDevCache {
-  private cachePath: string       // ~/.config/opencode/models-dev.json
-  private ttl: number             // 毫秒
-
-  async get(): Promise<ModelsDevData>     // 获取缓存或下载
-  async download(): Promise<void>         // 强制下载
-  isValid(): boolean                      // TTL 检查
-  getAge(): number                        // 缓存年龄
-}
-```
-
-- 下载使用 `fetch` + `AbortSignal.timeout(30000)` 超时
-- 首次使用自动下载
-- 可通过 `cacheTTL` 配置过期时间
-- 可通过 `cachePath` 自定义路径
-
-### 6.3 调试模式实现
-
-#### 模块
-
-```
-src/
-├── debug/
-│   └── config-dumper.ts     # 配置 dump 逻辑
-```
-
-#### Config Dumper
-
-```typescript
-class ConfigDumper {
-  private debugConfig: DebugConfig
-
-  constructor(config: DebugConfig) {
-    this.debugConfig = config
-  }
-
-  // 深拷贝原始 config 作为对比基线
-  snapshot(original: any): any { ... }
-
-  // 对比 snapshot 和 current，计算 diff
-  diff(snapshot: any, current: any): ConfigDiff { ... }
-
-  // 写入 dump 文件
-  async dump(diff: ConfigDiff): Promise<void> {
-    const content = this.debugConfig.diffOnly
-      ? this.formatDiff(diff)       // 仅变更部分 + 元数据
-      : this.formatFull(diff)       // 完整最终配置
-
-    await fs.writeFile(this.debugConfig.dumpPath, JSON.stringify(content, null, 2))
-    console.log(`[auto-model-config] Debug dump written to: ${this.debugConfig.dumpPath}`)
-  }
-}
-```
-
-#### 集成到 config hook
-
-```typescript
-const pluginConfig = await loadConfig()
-const dumper = pluginConfig?.debug?.enabled ? new ConfigDumper(pluginConfig.debug) : null
-const snapshot = dumper?.snapshot(config)
-
-// ... 执行模型元数据填充 ...
-
-if (dumper && snapshot) {
-  await dumper.dump(snapshot, config, allResolved, cacheAge)
-}
-```
-
-#### Diff 计算逻辑
-
-对 `config.provider` 下每个 mapping 声明的 provider：
-
-1. 记录 `_source`：映射到的 models.dev 条目
-2. 记录 `_filled`：本次新增的字段名列表
-3. 对每个新填充的字段，记录 `oldValue` → `newValue`
-4. 汇总 `_meta.summary`：处理了多少 provider、多少个模型、是否全部匹配
-
-#### 未匹配预警
-
-调试模式下，如果某个 model ID 在 mapping 中声明但在 models.dev 中找不到：
-- 在 dump 文件中标注 `"_warning": "not found in models.dev"`
-- 同时在 console 输出 warning
-
-### 6.4 通配符映射（未来扩展）
-
-可以支持通配符映射，减少配置书写：
-
-```jsonc
-"mapping": {
-  "misaka-newapi": {
-    "*": "opencode-go/{model}"    // 所有模型默认映射到 opencode-go
-  }
-}
-```
-
-当前版本暂不实现，保持简单。
-
-## 7. 与现有生态的关系
+## 9. 与现有生态的关系
 
 | 项目 | 关系 |
 |------|------|
-| `opencode-lmstudio` | 参考架构：插件钩子、config 修改、缓存模式 |
-| `models.dev` | 数据源：通过 api.json 获取模型元数据 |
-| OpenCode | 宿主：通过 `@opencode-ai/plugin` 的 `config` hook 注入增强配置 |
-| `@ai-sdk/openai-compatible` | 不直接依赖，是用户 provider 使用的 npm 包 |
+| `models.dev` | 数据源：通过 `api.json` 获取模型元数据 |
+| OpenCode | 宿主：通过 `Plugin.define` + `ctx.model.transform(editor => ...)` 注入增强字段 |
+| `@opencode/plugin` | 唯一插件运行时 API（2.x） |
+| `@ai-sdk/openai-compatible` | 不直接依赖，是用户 provider 常用的 npm 包 |
 
-## 8. 下一步（待确认后开始实现）
+## 10. 测试与验证策略
 
-1. [ ] 确认 mapping 配置格式是否合理
-2. [ ] 确认字段映射规则是否完整（是否需要补充 `temperature`、`interleaved` 等）
-3. [ ] 确认缓存策略（路径 `~/.config/opencode/models-dev.json`、TTL 24h）
-4. [ ] 确认调试模式 dump 格式是否满足审查需求
-5. [ ] 开始代码实现
+- 单元/集成测试全面隔离 HOME 与 XDG，使用临时 fixture，禁止读写真实 `~/.config/opencode/`
+- adapter/contract 集成测试用内存 mock `ModelEditor` 驱动 transform（`test/v2-adapter-integration.test.ts`）——**不是端到端验证**，无法证明宿主真实契约
+- 真实 CLI smoke 为环境变量门控的独立脚本（`test/smoke/opencode-cli.smoke.ts`），不纳入普通 `bunx vitest run`；截至目前尚未在可用环境中通过，宿主契约假设仍属**未验证**

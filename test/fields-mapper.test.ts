@@ -17,35 +17,61 @@ function makeModel(overrides: Partial<ModelsDevModel> = {}): ModelsDevModel {
     last_updated: "2024-08-06",
     modalities: { input: ["text", "image"], output: ["text"] },
     open_weights: false,
-    cost: { input: 2.5, output: 10, cache_read: 1.25 },
+    cost: {
+      input: 2.5,
+      output: 10,
+      cache_read: 1.25,
+      cache_write: 3.75,
+      context_over_200k: {
+        input: 5.0,
+        output: 20.0,
+        cache_read: 2.5,
+      },
+    },
     limit: { context: 128000, output: 16384 },
     ...overrides,
   }
 }
 
 describe("fieldsFromModelsDev", () => {
-  it("fills all standard fields from a complete model entry", () => {
+  it("fills all standard V2 fields from a complete model entry", () => {
     const result = fieldsFromModelsDev(makeModel())
 
     expect(result.name).toBe("GPT-4o")
-    expect(result.modalities).toEqual({ input: ["text", "image"], output: ["text"] })
+    expect(result.family).toBe("gpt")
+    expect(result.capabilities).toEqual({
+      tools: true,
+      input: ["text", "image"],
+      output: ["text"],
+    })
     expect(result.limit).toEqual({ context: 128000, output: 16384 })
-    expect(result.attachment).toBe(true)
-    expect(result.tool_call).toBe(true)
-    expect(result.reasoning).toBeUndefined() // false = omit (default)
-    expect(result.structured_output).toBe(true)
-    expect(result.cost).toEqual({ input: 2.5, output: 10, cache_read: 1.25 })
-    expect(result.knowledge).toBe("2023-10")
+    expect(result.cost).toEqual([
+      {
+        input: 2.5,
+        output: 10,
+        cache: {
+          read: 1.25,
+          write: 3.75,
+        },
+      },
+      {
+        tier: {
+          type: "context",
+          size: 200000,
+        },
+        input: 5.0,
+        output: 20.0,
+        cache: {
+          read: 2.5,
+          write: 0,
+        },
+      },
+    ])
   })
 
-  it("omits reasoning when false", () => {
-    const result = fieldsFromModelsDev(makeModel({ reasoning: false }))
-    expect(result.reasoning).toBeUndefined()
-  })
-
-  it("includes reasoning when true", () => {
-    const result = fieldsFromModelsDev(makeModel({ reasoning: true }))
-    expect(result.reasoning).toBe(true)
+  it("handles missing family gracefully", () => {
+    const result = fieldsFromModelsDev(makeModel({ family: undefined }))
+    expect(result.family).toBeUndefined()
   })
 
   it("includes input limit only when different from context", () => {
@@ -60,33 +86,15 @@ describe("fieldsFromModelsDev", () => {
     const result = fieldsFromModelsDev(makeModel({ cost: undefined }))
     expect(result.cost).toBeUndefined()
   })
-
-  it("handles interleaved field", () => {
-    const withInterleaved = fieldsFromModelsDev(makeModel({ interleaved: { field: "reasoning_content" } }))
-    expect(withInterleaved.interleaved).toEqual({ field: "reasoning_content" })
-
-    const withoutInterleaved = fieldsFromModelsDev(makeModel({ interleaved: undefined }))
-    expect(withoutInterleaved.interleaved).toBeUndefined()
-  })
-
-  it("handles missing knowledge", () => {
-    const result = fieldsFromModelsDev(makeModel({ knowledge: undefined }))
-    expect(result.knowledge).toBeUndefined()
-  })
 })
 
 describe("getFillableFields", () => {
-  it("returns the list of fields that can be auto-filled", () => {
+  it("returns the list of V2 fields that can be auto-filled", () => {
     const fields = getFillableFields()
     expect(fields).toContain("name")
-    expect(fields).toContain("modalities")
+    expect(fields).toContain("family")
+    expect(fields).toContain("capabilities")
     expect(fields).toContain("limit")
-    expect(fields).toContain("attachment")
-    expect(fields).toContain("tool_call")
-    expect(fields).toContain("reasoning")
-    expect(fields).toContain("structured_output")
     expect(fields).toContain("cost")
-    expect(fields).toContain("knowledge")
-    expect(fields).toContain("interleaved")
   })
 })

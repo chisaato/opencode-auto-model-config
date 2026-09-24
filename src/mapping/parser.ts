@@ -1,108 +1,93 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import os from "node:os";
-import type { AutoModelConfig } from "../types";
+import fs from "node:fs/promises"
+import path from "node:path"
+import type { AutoModelConfig } from "../types"
+import { getGlobalConfigDir, type PathResolutionOptions } from "../utils/paths"
 
-const CONFIG_FILENAME = "oc-auto-model-config.json";
+const CONFIG_FILENAME = "oc-auto-model-config.json"
 
-export async function loadConfig(): Promise<AutoModelConfig | null> {
-	const searchPaths = [
-		path.join(os.homedir(), ".config", "opencode", CONFIG_FILENAME),
-		path.join(process.cwd(), CONFIG_FILENAME),
-	];
+export interface LoadConfigOptions extends PathResolutionOptions {}
 
-	for (const configPath of searchPaths) {
-		try {
-			const raw = await fs.readFile(configPath, "utf-8");
-			const parsed = JSON.parse(raw);
-			return parseAutoModelConfig(parsed, configPath);
-		} catch {
-			continue;
-		}
-	}
+export async function loadConfig(options?: LoadConfigOptions): Promise<AutoModelConfig | null> {
+  const searchPaths: string[] = []
 
-	await autoCreateConfig(
-		path.join(os.homedir(), ".config", "opencode", CONFIG_FILENAME),
-	);
+  // 1. 项目目录优先（若提供）
+  if (options?.projectDirectory) {
+    searchPaths.push(path.join(options.projectDirectory, CONFIG_FILENAME))
+  } else {
+    // 兼容无参数时的工作目录
+    searchPaths.push(path.join(process.cwd(), CONFIG_FILENAME))
+  }
 
-	return null;
-}
+  // 2. 全局目录回退（遵循 XDG_CONFIG_HOME / injected home / default ~/.config/opencode）
+  const globalDir = getGlobalConfigDir(options)
+  searchPaths.push(path.join(globalDir, CONFIG_FILENAME))
 
-async function autoCreateConfig(configPath: string): Promise<void> {
-	const template = {
-		"//": "OpenCode Auto Model Config - add model mapping rules below",
-		"//usage":
-			'Format: { "providerName": { "modelId": "modelsdev-provider/modelsdev-model-id" } }',
-		"//example": '{ "my-provider": { "gpt-4o": "openai/gpt-4o" } }',
-		mapping: {},
-	};
-	try {
-		await fs.writeFile(
-			configPath,
-			JSON.stringify(template, null, 2) + "\n",
-			"utf-8",
-		);
-		console.log(`[auto-model-config] Created default config: ${configPath}`);
-		console.log(
-			`[auto-model-config] Edit ${CONFIG_FILENAME} to add model mappings, then restart OpenCode`,
-		);
-	} catch (err) {
-		console.warn(
-			`[auto-model-config] Failed to create default config at ${configPath}:`,
-			err,
-		);
-	}
+  for (const configPath of searchPaths) {
+    try {
+      const raw = await fs.readFile(configPath, "utf-8")
+      const parsed = JSON.parse(raw)
+      return parseAutoModelConfig(parsed, configPath)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      // 文件不存在（ENOENT）是正常回退场景，不产生噪音；其它读取/解析失败则记录可诊断信息。
+      if (code !== "ENOENT") {
+        const reason = error instanceof Error ? error.message : String(error)
+        console.warn(`[auto-model-config] Failed to read config at ${configPath}: ${reason}`)
+      }
+      continue
+    }
+  }
+
+  return null
 }
 
 function parseAutoModelConfig(
-	raw: any,
-	configPath: string,
+  raw: any,
+  configPath: string,
 ): AutoModelConfig | null {
-	if (!raw || typeof raw !== "object") {
-		console.warn(`[auto-model-config] Invalid config in ${configPath}`);
-		return null;
-	}
+  if (!raw || typeof raw !== "object") {
+    console.warn(`[auto-model-config] Invalid config in ${configPath}`)
+    return null
+  }
 
-	if (
-		!raw.mapping ||
-		typeof raw.mapping !== "object" ||
-		Object.keys(raw.mapping).length === 0
-	) {
-		console.warn(`[auto-model-config] No mapping configured in ${configPath}`);
-		return null;
-	}
+  if (
+    !raw.mapping ||
+    typeof raw.mapping !== "object" ||
+    Object.keys(raw.mapping).length === 0
+  ) {
+    console.warn(`[auto-model-config] No mapping configured in ${configPath}`)
+    return null
+  }
 
-	console.log(`[auto-model-config] Loaded config from ${configPath}`);
+  console.log(`[auto-model-config] Loaded config from ${configPath}`)
 
-	return {
-		cacheTTL: typeof raw.cacheTTL === "number" ? raw.cacheTTL : undefined,
-		cachePath: raw.cachePath ?? undefined,
-		mapping: raw.mapping as Record<string, Record<string, string>>,
-		debug: parseDebugConfig(raw.debug),
-	};
+  return {
+    cacheTTL: typeof raw.cacheTTL === "number" ? raw.cacheTTL : undefined,
+    cachePath: raw.cachePath ?? undefined,
+    mapping: raw.mapping as Record<string, Record<string, string>>,
+    debug: parseDebugConfig(raw.debug),
+  }
 }
 
 function parseDebugConfig(raw: any): AutoModelConfig["debug"] {
-	if (!raw || typeof raw !== "object" || raw.enabled !== true) {
-		return undefined;
-	}
-	return {
-		enabled: true,
-		dumpPath: typeof raw.dumpPath === "string" ? raw.dumpPath : undefined,
-		diffOnly: raw.diffOnly !== undefined ? !!raw.diffOnly : true,
-	};
+  if (!raw || typeof raw !== "object" || raw.enabled !== true) {
+    return undefined
+  }
+  return {
+    enabled: true,
+    dumpPath: typeof raw.dumpPath === "string" ? raw.dumpPath : undefined,
+    diffOnly: raw.diffOnly !== undefined ? !!raw.diffOnly : true,
+  }
 }
 
 export function getMappedProviders(config: AutoModelConfig): string[] {
-	return Object.keys(config.mapping);
+  return Object.keys(config.mapping)
 }
 
 export function getMappingTarget(
-	config: AutoModelConfig,
-	providerName: string,
-	modelId: string,
+  config: AutoModelConfig,
+  provider: string,
+  modelId: string,
 ): string | null {
-	const providerMapping = config.mapping[providerName];
-	if (!providerMapping) return null;
-	return providerMapping[modelId] || null;
+  return config.mapping[provider]?.[modelId] ?? null
 }

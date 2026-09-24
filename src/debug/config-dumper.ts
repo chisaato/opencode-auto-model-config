@@ -1,160 +1,120 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import os from "node:os";
+import fs from "node:fs/promises"
+import path from "node:path"
 import type {
-	AutoModelConfig,
-	ProcessingSummary,
-	ConfigObject,
-	ResolvedModel,
-} from "../types";
+  AutoModelConfig,
+  ResolvedModel,
+} from "../types"
+import { getDefaultDumpPath, type PathResolutionOptions } from "../utils/paths"
 
-const DEFAULT_DUMP_PATH = path.join(
-	os.homedir(),
-	".config",
-	"opencode",
-	"expanded-config.json",
-);
+export interface ConfigDumperOptions extends NonNullable<AutoModelConfig["debug"]>, PathResolutionOptions {}
+
+export interface EnhancedModelResult {
+  source: string
+  filledFields: string[]
+  warning?: string
+  skipped?: boolean
+  model?: Record<string, any>
+}
 
 export class ConfigDumper {
-	private config: NonNullable<AutoModelConfig["debug"]>;
-	private dumpPath: string;
+  private config: NonNullable<AutoModelConfig["debug"]>
+  private dumpPath: string
 
-	constructor(debugConfig: NonNullable<AutoModelConfig["debug"]>) {
-		this.config = debugConfig;
-		this.dumpPath = debugConfig.dumpPath || DEFAULT_DUMP_PATH;
-	}
+  constructor(options: ConfigDumperOptions) {
+    this.config = options
+    this.dumpPath = options.dumpPath || getDefaultDumpPath(options)
+  }
 
-	/**
-	 * 在处理之前对配置进行深拷贝快照。
-	 */
-	snapshot(original: ConfigObject): ConfigObject {
-		return JSON.parse(JSON.stringify(original));
-	}
+  /**
+   * V2 输出：仅输出模型增强差异或完整结果，不依赖 V1 config。
+   * 支持 diffOnly 配置。
+   */
+  async dumpV2(
+    enhancedModels: Record<string, Record<string, EnhancedModelResult>>,
+    resolvedModels: Map<string, Map<string, ResolvedModel>>,
+    cacheAge: number,
+  ): Promise<void> {
+    const diffOnly = this.config.diffOnly !== false
+    const meta = this.buildMeta(enhancedModels, resolvedModels, cacheAge)
+    const output: Record<string, any> = {
+      _meta: meta,
+      provider: {},
+    }
 
-	/**
-	 * 计算原始快照与处理后配置之间的差异，然后写入输出文件。
-	 */
-	async dump(
-		snapshot: ConfigObject,
-		current: ConfigObject,
-		resolvedModels: Map<string, Map<string, ResolvedModel>>,
-		cacheAge: number,
-	): Promise<void> {
-		const diffOnly = this.config.diffOnly !== false;
+    for (const [providerKey, models] of Object.entries(enhancedModels)) {
+      output.provider[providerKey] = { models: {} }
 
-		const content = diffOnly
-			? this.buildDiffOutput(snapshot, current, resolvedModels, cacheAge)
-			: this.buildFullOutput(current, resolvedModels, cacheAge);
+      for (const [modelId, res] of Object.entries(models)) {
+        const entry: Record<string, any> = {
+          _source: res.source,
+          _filled: res.filledFields,
+        }
 
-		await fs.mkdir(path.dirname(this.dumpPath), { recursive: true });
-		await fs.writeFile(
-			this.dumpPath,
-			JSON.stringify(content, null, 2),
-			"utf-8",
-		);
-		console.log(`[auto-model-config] Debug dump written to: ${this.dumpPath}`);
-	}
+        if (res.warning) {
+          entry._warning = res.warning
+        } else if (res.skipped) {
+          entry._skipped = true
+        } else if (res.model) {
+          if (diffOnly) {
+            // 仅输出实际被自动填充的字段
+            for (const field of res.filledFields) {
+              if (field in res.model) {
+                entry[field] = res.model[field]
+              }
+            }
+          } else {
+            // 完整输出当前 model 字段
+            Object.assign(entry, res.model)
+          }
+        }
 
-	/**
-	 * 构建差异输出：仅显示变更内容和元数据。
-	 */
-	private buildDiffOutput(
-		snapshot: ConfigObject,
-		current: ConfigObject,
-		resolvedModels: Map<string, Map<string, ResolvedModel>>,
-		cacheAge: number,
-	): Record<string, any> {
-		const meta = this.buildMeta(resolvedModels, cacheAge);
-		const output: Record<string, any> = { _meta: meta };
+        output.provider[providerKey].models[modelId] = entry
+      }
+    }
 
-		if (meta.errors && meta.errors.length > 0) {
-			return output;
-		}
+    await fs.mkdir(path.dirname(this.dumpPath), { recursive: true })
+    await fs.writeFile(
+      this.dumpPath,
+      JSON.stringify(output, null, 2),
+      "utf-8",
+    )
+    console.log(`[auto-model-config] Debug dump written to: ${this.dumpPath}`)
+  }
 
-		output.provider = {};
-		const snapshotProviders = snapshot.provider || {};
-		const currentProviders = current.provider || {};
+  private buildMeta(
+    enhancedModels: Record<string, Record<string, EnhancedModelResult>>,
+    resolvedModels: Map<string, Map<string, ResolvedModel>>,
+    cacheAge: number,
+  ): Record<string, any> {
+    let modelsFilled = 0
+    let modelsNotFound = 0
+    let modelsSkipped = 0
+    const mappingsUsed: Record<string, string> = {}
 
-		for (const [providerKey, models] of resolvedModels) {
-			output.provider[providerKey] = { models: {} };
+    for (const [providerKey, models] of Object.entries(enhancedModels)) {
+      for (const [modelId, res] of Object.entries(models)) {
+        mappingsUsed[`${providerKey}/${modelId}`] = res.source
+        if (res.warning) {
+          modelsNotFound++
+        } else if (res.skipped) {
+          modelsSkipped++
+        } else if (res.filledFields.length > 0) {
+          modelsFilled++
+        }
+      }
+    }
 
-			for (const [modelId, resolved] of models) {
-				const entry: Record<string, any> = {
-					_source: resolved.source,
-					_filled: resolved.filledFields,
-				};
-
-				if (resolved.warning) {
-					entry._warning = resolved.warning;
-				} else {
-					// 仅包含实际填充的字段
-					const configFields =
-						currentProviders[providerKey]?.models?.[modelId] || {};
-					for (const field of resolved.filledFields) {
-						if (field in configFields) {
-							entry[field] = configFields[field];
-						}
-					}
-				}
-
-				output.provider[providerKey].models[modelId] = entry;
-			}
-		}
-
-		return output;
-	}
-
-	/**
-	 * 构建完整输出：完整的处理后配置。
-	 */
-	private buildFullOutput(
-		current: ConfigObject,
-		resolvedModels: Map<string, Map<string, ResolvedModel>>,
-		cacheAge: number,
-	): Record<string, any> {
-		const meta = this.buildMeta(resolvedModels, cacheAge);
-		return { _meta: meta, ...current };
-	}
-
-	/**
-	 * 构建元数据摘要。
-	 */
-	private buildMeta(
-		resolvedModels: Map<string, Map<string, ResolvedModel>>,
-		cacheAge: number,
-	): ProcessingSummary {
-		let modelsFilled = 0;
-		let modelsNotFound = 0;
-		let modelsSkipped = 0;
-		const mappingsUsed: Record<string, string> = {};
-		const errors: string[] = [];
-
-		for (const [, models] of resolvedModels) {
-			for (const [modelId, resolved] of models) {
-				mappingsUsed[modelId] = resolved.source;
-				if (resolved.warning) {
-					modelsNotFound++;
-					errors.push(`${modelId}: ${resolved.warning}`);
-				} else if (resolved.filledFields.length > 0) {
-					modelsFilled++;
-				} else {
-					modelsSkipped++;
-				}
-			}
-		}
-
-		return {
-			plugin: "opencode-auto-model-config",
-			timestamp: new Date().toISOString(),
-			modelsDevCacheAge: cacheAge,
-			summary: {
-				providersProcessed: resolvedModels.size,
-				modelsFilled,
-				modelsNotFound,
-				modelsSkipped,
-				mappingsUsed,
-			},
-			...(errors.length > 0 ? { errors } : {}),
-		};
-	}
+    return {
+      plugin: "@misakacloud/opencode-auto-model-config",
+      timestamp: new Date().toISOString(),
+      modelsDevCacheAge: cacheAge,
+      summary: {
+        providersProcessed: Object.keys(enhancedModels).length,
+        modelsFilled,
+        modelsNotFound,
+        modelsSkipped,
+        mappingsUsed,
+      },
+    }
+  }
 }

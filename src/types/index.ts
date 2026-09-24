@@ -66,12 +66,12 @@ export interface ModelsDevCost {
 }
 
 /**
- * 插件配置（来自 opencode.json 的 autoModelConfig 部分）
+ * 插件配置（来自 oc-auto-model-config.json）
  */
 export interface AutoModelConfig {
   /** 缓存 TTL，单位为秒（默认：86400 = 24 小时） */
   cacheTTL?: number
-  /** 自定义缓存路径，null 表示使用默认路径（~/.config/opencode/models-dev.json） */
+  /** 自定义缓存路径；null/未设置时使用 XDG 配置目录下的 models-dev.json */
   cachePath?: string | null
   /** 映射关系：provider -> { modelId -> "modelsdev-provider/modelsdev-modelId" } */
   mapping: Record<string, Record<string, string>>
@@ -85,7 +85,7 @@ export interface AutoModelConfig {
 export interface DebugConfig {
   /** 启用调试输出 */
   enabled: boolean
-  /** 输出文件路径（默认：~/.config/opencode/expanded-config.json） */
+  /** 输出文件路径（默认：XDG 配置目录下的 expanded-config.json） */
   dumpPath?: string
   /** 仅输出变更的字段（默认：true） */
   diffOnly?: boolean
@@ -99,27 +99,8 @@ export interface ResolvedModel {
   source: string
   /** 完整的 models.dev 模型数据 */
   modelData: ModelsDevModel
-  /** 需要填充到 OpenCode 配置中的字段 */
+  /** 需要填充到 OpenCode V2 模型元数据中的字段 */
   filledFields: string[]
   /** 警告信息（如有） */
   warning?: string
 }
-
-/**
- * 配置处理运行摘要（用于调试输出）
- */
-export interface ProcessingSummary {
-  plugin: string
-  timestamp: string
-  modelsDevCacheAge: number
-  summary: {
-    providersProcessed: number
-    modelsFilled: number
-    modelsNotFound: number
-    modelsSkipped: number
-    mappingsUsed: Record<string, string>
-  }
-  errors?: string[]
-}
-
-export type ConfigObject = Record<string, any>
